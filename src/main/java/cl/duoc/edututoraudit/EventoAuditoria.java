@@ -36,6 +36,13 @@ public class EventoAuditoria {
 
 	private Instant registradoEn;
 
+	// Complementarios para el frontend oficial: todo evento que llega a esta
+	// tabla ya se publicó y consumió con éxito (si Kafka hubiera fallado, el
+	// evento ni siquiera existiría acá), y siempre viene del mismo tópico.
+	private String origen = "ms-edututor-sessions";
+
+	private String resultado = "EXITOSO";
+
 	protected EventoAuditoria() {
 	}
 
@@ -90,5 +97,13 @@ public class EventoAuditoria {
 
 	public Instant getRegistradoEn() {
 		return registradoEn;
+	}
+
+	public String getOrigen() {
+		return origen;
+	}
+
+	public String getResultado() {
+		return resultado;
 	}
 }
