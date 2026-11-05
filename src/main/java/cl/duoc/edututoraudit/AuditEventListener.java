@@ -1,62 +1,42 @@
 package cl.duoc.edututoraudit;
 
-import java.time.Instant;
-import java.util.Map;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 
-// Cada microservicio deserializa el JSON del tópico a su propio tipo
-// (Map genérico aquí), sin depender de la clase Java del productor — son
-// servicios independientes, no comparten código de dominio.
+// Capa de mensajería: recibe el evento de Kafka, lo valida y se lo entrega a
+// AuditService. No tiene lógica de negocio.
+//
+// Si algo falla aquí, el manejo de errores del contenedor (KafkaClientConfig)
+// reintenta con espera creciente y, agotados los reintentos o ante un mensaje
+// inválido, lo envía a sessions.events.DLT y lo registra en el log.
+//
+// Grupo audit-service-v1: lee TODOS los eventos (cada grupo tiene su propio
+// avance, report lee los mismos con otro grupo). La concurrencia reparte las
+// particiones entre hilos de este servicio, y si se levanta otra instancia con el
+// mismo grupo Kafka reparte las particiones entre las dos.
 @Component
 public class AuditEventListener {
 
-	private static final Logger log = LoggerFactory.getLogger(AuditEventListener.class);
+	private final EventValidator validador;
+	private final AuditService servicio;
 
-	private final EventoAuditoriaRepository repository;
-
-	public AuditEventListener(EventoAuditoriaRepository repository) {
-		this.repository = repository;
+	public AuditEventListener(EventValidator validador, AuditService servicio) {
+		this.validador = validador;
+		this.servicio = servicio;
 	}
 
-	@KafkaListener(topics = "sessions.events", groupId = "audit-service-v1")
+	@KafkaListener(topics = "${edututor.kafka.topic.events}", groupId = "${spring.kafka.consumer.group-id}")
 	public void onSessionEvent(
-			@Payload Map<String, Object> evento,
+			@Payload(required = false) SessionEventDto evento,
 			@Header(KafkaHeaders.RECEIVED_PARTITION) int particion,
 			@Header(KafkaHeaders.OFFSET) long offset,
 			// required = false: un mensaje sin key (por ejemplo, uno publicado a
 			// mano desde la consola) no trae este header y no debe romper el listener.
 			@Header(name = KafkaHeaders.RECEIVED_KEY, required = false) String key) {
-		String eventId = (String) evento.get("eventId");
-
-		// Idempotencia: si ya se procesó este eventId, no se duplica el registro.
-		if (repository.findByEventId(eventId).isPresent()) {
-			log.info("Evento {} ya auditado (kafka p{} o{}), se ignora", eventId, particion, offset);
-			return;
-		}
-
-		@SuppressWarnings("unchecked")
-		Map<String, Object> payload = (Map<String, Object>) evento.get("payload");
-
-		EventoAuditoria registro = new EventoAuditoria(
-			eventId,
-			payload.get("sessionId") == null ? null : Long.valueOf(payload.get("sessionId").toString()),
-			(String) evento.get("type"),
-			(String) payload.get("estudianteId"),
-			(String) payload.get("tutorId"),
-			(String) payload.get("estadoAnterior"),
-			(String) payload.get("estadoNuevo"),
-			Instant.parse((String) evento.get("timestamp")));
-
-		registro.registrarOrigenKafka(particion, offset, key);
-		repository.save(registro);
-		log.info("Auditado kafka p{} o{} key={} eventId={} tipo={} sessionId={}", particion, offset,
-			key != null ? key : "(sin key)", eventId, registro.getTipo(), registro.getSessionId());
+		validador.validar(evento);
+		servicio.registrar(evento, new AuditService.OrigenKafka(particion, offset, key));
 	}
 }

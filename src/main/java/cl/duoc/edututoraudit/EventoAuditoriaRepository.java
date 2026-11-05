@@ -14,6 +14,10 @@ public interface EventoAuditoriaRepository extends JpaRepository<EventoAuditoria
 
 	List<EventoAuditoria> findBySessionIdOrderByOcurridoEnAsc(Long sessionId);
 
+	// Cuántas veces un estudiante llegó a un estado desde cierta fecha (regla de cancelaciones).
+	long countByEstudianteIdAndEstadoNuevoAndOcurridoEnGreaterThanEqual(String estudianteId, String estadoNuevo,
+		Instant desde);
+
 	@Query("""
 		SELECT e FROM EventoAuditoria e
 		WHERE (:estudianteId IS NULL OR e.estudianteId = :estudianteId)
