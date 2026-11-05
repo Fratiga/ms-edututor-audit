@@ -43,6 +43,16 @@ public class EventoAuditoria {
 
 	private String resultado = "EXITOSO";
 
+	// De dónde salió el evento en Kafka (tópico sessions.events): partición y
+	// offset del mensaje, y su key (sessionId). Permite rastrear cada registro
+	// hasta su posición exacta en el log. Nulos en los registros anteriores a
+	// esta columna.
+	private Integer kafkaParticion;
+
+	private Long kafkaOffset;
+
+	private String kafkaKey;
+
 	protected EventoAuditoria() {
 	}
 
@@ -57,6 +67,24 @@ public class EventoAuditoria {
 		this.estadoNuevo = estadoNuevo;
 		this.ocurridoEn = ocurridoEn;
 		this.registradoEn = Instant.now();
+	}
+
+	public void registrarOrigenKafka(int particion, long offset, String key) {
+		this.kafkaParticion = particion;
+		this.kafkaOffset = offset;
+		this.kafkaKey = key;
+	}
+
+	public Integer getKafkaParticion() {
+		return kafkaParticion;
+	}
+
+	public Long getKafkaOffset() {
+		return kafkaOffset;
+	}
+
+	public String getKafkaKey() {
+		return kafkaKey;
 	}
 
 	public Long getId() {

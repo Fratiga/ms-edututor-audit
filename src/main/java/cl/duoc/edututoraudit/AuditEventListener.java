@@ -6,6 +6,8 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 
@@ -24,12 +26,18 @@ public class AuditEventListener {
 	}
 
 	@KafkaListener(topics = "sessions.events", groupId = "audit-service-v1")
-	public void onSessionEvent(@Payload Map<String, Object> evento) {
+	public void onSessionEvent(
+			@Payload Map<String, Object> evento,
+			@Header(KafkaHeaders.RECEIVED_PARTITION) int particion,
+			@Header(KafkaHeaders.OFFSET) long offset,
+			// required = false: un mensaje sin key (por ejemplo, uno publicado a
+			// mano desde la consola) no trae este header y no debe romper el listener.
+			@Header(name = KafkaHeaders.RECEIVED_KEY, required = false) String key) {
 		String eventId = (String) evento.get("eventId");
 
 		// Idempotencia: si ya se procesó este eventId, no se duplica el registro.
 		if (repository.findByEventId(eventId).isPresent()) {
-			log.info("Evento {} ya auditado, se ignora", eventId);
+			log.info("Evento {} ya auditado (kafka p{} o{}), se ignora", eventId, particion, offset);
 			return;
 		}
 
@@ -46,7 +54,9 @@ public class AuditEventListener {
 			(String) payload.get("estadoNuevo"),
 			Instant.parse((String) evento.get("timestamp")));
 
+		registro.registrarOrigenKafka(particion, offset, key);
 		repository.save(registro);
-		log.info("Auditado eventId={} tipo={} sessionId={}", eventId, registro.getTipo(), registro.getSessionId());
+		log.info("Auditado kafka p{} o{} key={} eventId={} tipo={} sessionId={}", particion, offset,
+			key != null ? key : "(sin key)", eventId, registro.getTipo(), registro.getSessionId());
 	}
 }

@@ -35,20 +35,25 @@ public class AuditController {
 		return repository.findBySessionIdOrderByOcurridoEnAsc(id).stream().map(EventoAuditoriaResponse::from).toList();
 	}
 
-	// DTO externo alineado al contrato del frontend (eventoTipo/usuario/
-	// fechaTimestamp en vez de tipo/estudianteId/ocurridoEn). payloadJson
-	// reconstruye el detalle real de la transicion en vez de inventar datos.
+
+	// DTO externo alineado al contrato del frontend. payloadJson reconstruye el
+	// detalle de la transicion y, si el registro lo tiene, la posicion exacta
+	// del evento en Kafka (kafkaParticion / kafkaOffset / kafkaKey).
 	public record EventoAuditoriaResponse(String id, String eventoTipo, String origen, String usuario,
 			java.time.Instant fechaTimestamp, java.util.Map<String, Object> payloadJson, String resultado) {
 		static EventoAuditoriaResponse from(EventoAuditoria e) {
+			java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+			payload.put("sessionId", String.valueOf(e.getSessionId()));
+			payload.put("tutorId", e.getTutorId() == null ? "" : e.getTutorId());
+			payload.put("estadoAnterior", e.getEstadoAnterior() == null ? "" : e.getEstadoAnterior());
+			payload.put("estadoNuevo", e.getEstadoNuevo() == null ? "" : e.getEstadoNuevo());
+			if (e.getKafkaParticion() != null) {
+				payload.put("kafkaParticion", String.valueOf(e.getKafkaParticion()));
+				payload.put("kafkaOffset", String.valueOf(e.getKafkaOffset()));
+				payload.put("kafkaKey", e.getKafkaKey() == null ? "" : e.getKafkaKey());
+			}
 			return new EventoAuditoriaResponse(String.valueOf(e.getId()), e.getTipo(), e.getOrigen(),
-				e.getEstudianteId(), e.getOcurridoEn(),
-				java.util.Map.of(
-					"sessionId", String.valueOf(e.getSessionId()),
-					"tutorId", e.getTutorId() == null ? "" : e.getTutorId(),
-					"estadoAnterior", e.getEstadoAnterior() == null ? "" : e.getEstadoAnterior(),
-					"estadoNuevo", e.getEstadoNuevo() == null ? "" : e.getEstadoNuevo()),
-				e.getResultado());
+				e.getEstudianteId(), e.getOcurridoEn(), payload, e.getResultado());
 		}
 	}
 }
